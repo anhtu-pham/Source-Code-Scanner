@@ -6,6 +6,9 @@ import java.nio.file.Paths;
 import java.util.List;
 
 public class Main {
+
+    // Authors: Tu Pham (tap95), Minh Le (mhl87)
+
     public static void main(String[] args) {
         if (args.length != 1) {
             System.out.println("Usage: spartie [file]");

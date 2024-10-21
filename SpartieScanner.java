@@ -6,7 +6,6 @@ import java.util.Map;
 public class SpartieScanner {
     private String source;
 
-    private int start = 0;
     private int current = 0;
     private int line = 1;
 
@@ -25,6 +24,23 @@ public class SpartieScanner {
         keywords.put("null", TokenType.NULL);
     }
 
+    private static final Map<Character, TokenType> singleCharacters = new HashMap<>();
+    static {
+        singleCharacters.put(';', TokenType.SEMICOLON);
+        singleCharacters.put(',', TokenType.COMMA);
+        singleCharacters.put('=', TokenType.ASSIGN);
+        singleCharacters.put('{', TokenType.LEFT_BRACE);
+        singleCharacters.put('}', TokenType.RIGHT_BRACE);
+        singleCharacters.put('(', TokenType.LEFT_PAREN);
+        singleCharacters.put(')', TokenType.RIGHT_PAREN);
+        singleCharacters.put('*', TokenType.MULTIPLY);
+        singleCharacters.put('+', TokenType.ADD);
+        singleCharacters.put('-', TokenType.SUBTRACT);
+        singleCharacters.put('!', TokenType.NOT);
+        singleCharacters.put('&', TokenType.AND);
+        singleCharacters.put('|', TokenType.OR);
+    }
+
     public SpartieScanner(String source) {
         this.source = source;
     }
@@ -34,18 +50,35 @@ public class SpartieScanner {
 
         Token token = null;
 
+        skipSeparators();
         while (!isAtEnd(current) && (token = getNextToken()) != null) {
+            skipSeparators();
             if (token.type != TokenType.IGNORE) tokens.add(token);
         }
 
         return tokens;
     }
 
+    private void skipSeparators() {
+        skipSameLineSeparators();
+        boolean isNextLine = false;
+        while (!isAtEnd(current) && source.charAt(current) == '\n') {
+            isNextLine = true;
+            current++;
+        }
+        if (isNextLine) line++;
+        skipSameLineSeparators();
+    }
+
+    private void skipSameLineSeparators() {
+        while (!isAtEnd(current) && (source.charAt(current) == ' ' || source.charAt(current) == '\r')) {
+            current++;
+        }
+    }
+
     private Token getNextToken() {
-
-        skipSeparators();
-
         Token token = null;
+
         // Try to get each type of token, starting with a simple token, and getting a little more complex
         token = getSingleCharacterToken();
         if (token == null) token = getComparisonToken();
@@ -56,20 +89,7 @@ public class SpartieScanner {
         if (token == null) {
             error(line, String.format("Unexpected character '%c' at %d ", source.charAt(current), current));
         }
-        // System.out.println(current);
         return token;
-    }
-
-    private void skipSeparators() {
-        while (source.charAt(current) == ' ' || source.charAt(current) == '\r') {
-            current++;
-        }
-        boolean isNextLine = false;
-        while (source.charAt(current) == '\n') {
-            isNextLine = true;
-            current++;
-        }
-        if (isNextLine) line++;
     }
 
     // TODO: Complete implementation
@@ -81,7 +101,14 @@ public class SpartieScanner {
 
         // Hint: Start of not knowing what the token is, if we can determine it, return it, otherwise, return null
         TokenType type = TokenType.UNDEFINED;
-
+        if (singleCharacters.containsKey(nextCharacter)) {
+            if (nextCharacter == '=' && examine('=')) {
+                return null;
+            }
+            type = singleCharacters.get(nextCharacter);
+            current++;
+            return new Token(type, Character.toString(nextCharacter), line);
+        }
         return null;
     }
 
@@ -120,13 +147,15 @@ public class SpartieScanner {
 
     // TODO: Complete implementation
     private Token getDivideOrComment() {
-        // Hint: Examine the character for a comparison but check the next character (as long as one is available)
+        // Hint: Examine the character for division or comment but check the next character (as long as one is available)
         char nextCharacter = source.charAt(current);
         if (nextCharacter == '/') {
-            boolean isComment = examine('/');
-            String text = isComment ? "//" : "/";
-            current += text.length();
-            return new Token(isComment ? TokenType.IGNORE : TokenType.DIVIDE, text, line);
+            if (examine('/')) {
+                while (!examine('\n')) {
+                    current++;
+                }
+                return new Token(TokenType.IGNORE, null, line);
+            } else return new Token(TokenType.DIVIDE, "/", line);
         }
         return null;
     }
@@ -141,7 +170,7 @@ public class SpartieScanner {
         if (nextCharacter == '\"') {
             StringBuilder builder = new StringBuilder();
             boolean found = false;
-            while (!isAtEnd(current + 1) && !examine('\n')) {
+            while (!examine('\n')) {
                 if (examine('\"')) {
                     found = true;
                     break;
@@ -152,8 +181,9 @@ public class SpartieScanner {
             }
             if (found) {
                 current += 2;
-                string = builder.toString();
-                return new Token(TokenType.STRING, string, line);
+                return new Token(TokenType.STRING, builder.toString(), line);
+            } else {
+                error(line, "Invalid string representation");
             }
         }
         return null;
@@ -163,12 +193,52 @@ public class SpartieScanner {
     private Token getNumericToken() {
         // Hint: Follow similar idea of String, but in this case if it is a digit
         // You should only allow one period in your scanner
-        return null;
+        char nextCharacter = source.charAt(current);
+        if (!isDigit(nextCharacter) && nextCharacter != '.') {
+            return null;
+        }
+        boolean hasPeriod = (nextCharacter == '.');
+        StringBuilder builder = new StringBuilder();
+        builder.append(nextCharacter);
+        while (!isAtEnd(++current)) {
+            char character = source.charAt(current);
+            if (isDigit(character)) {
+                builder.append(character);
+            } else if (character == '.') {
+                if (hasPeriod) {
+                    error(line, "Invalid number");
+                } else {
+                    hasPeriod = true;
+                    builder.append(character);
+                }
+            } else {
+                break;
+            }
+        }
+        return new Token(TokenType.NUMBER, builder.toString(), line);
     }
 
     // TODO: Complete implementation
     private Token getIdentifierOrReservedWord() {
         // Hint: Assume first it is an identifier and once you capture it, then check if it is a reserved word.
+        char nextCharacter = source.charAt(current);
+        if (isAlpha(nextCharacter)) {
+            StringBuilder builder = new StringBuilder();
+            builder.append(nextCharacter);
+            // Get the word, throw error if meet invalid character
+            while (!isAtEnd(++current)) {
+                char character = source.charAt(current);
+                if (character == '\n' || character == '\r' || character == ' ') {
+                    break;
+                } else if (isAlpha(character)) {
+                    builder.append(character);
+                } else {
+                    break;
+                }
+            }
+            String word = builder.toString();
+            return new Token(keywords.getOrDefault(word, TokenType.IDENTIFIER), word, line);
+        }
         return null;
     }
     
