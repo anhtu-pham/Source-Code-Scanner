@@ -33,7 +33,8 @@ public class SpartieScanner {
         List<Token> tokens = new ArrayList<>();
 
         Token token = null;
-        while (!isAtEnd() && (token = getNextToken()) != null) {
+
+        while (!isAtEnd(current) && (token = getNextToken()) != null) {
             if (token.type != TokenType.IGNORE) tokens.add(token);
         }
 
@@ -41,8 +42,10 @@ public class SpartieScanner {
     }
 
     private Token getNextToken() {
-        Token token = null;
 
+        skipSeparators();
+
+        Token token = null;
         // Try to get each type of token, starting with a simple token, and getting a little more complex
         token = getSingleCharacterToken();
         if (token == null) token = getComparisonToken();
@@ -51,16 +54,28 @@ public class SpartieScanner {
         if (token == null) token = getNumericToken();
         if (token == null) token = getIdentifierOrReservedWord();
         if (token == null) {
-            error(line, String.format("Unexpected character '%c' at %d", source.charAt(current), current));
+            error(line, String.format("Unexpected character '%c' at %d ", source.charAt(current), current));
         }
-
+        // System.out.println(current);
         return token;
+    }
+
+    private void skipSeparators() {
+        while (source.charAt(current) == ' ' || source.charAt(current) == '\r') {
+            current++;
+        }
+        boolean isNextLine = false;
+        while (source.charAt(current) == '\n') {
+            isNextLine = true;
+            current++;
+        }
+        if (isNextLine) line++;
     }
 
     // TODO: Complete implementation
     private Token getSingleCharacterToken() {
         // Hint: Examine the character, if you can get a token, return it, otherwise return null
-        // Hint: Be careful with the divide, we have ot know if it is a single character
+        // Hint: Be careful with the divide, we have not known if it is a single character
 
         char nextCharacter = source.charAt(current);
 
@@ -75,7 +90,31 @@ public class SpartieScanner {
         // Hint: Examine the character for a comparison but check the next character (as long as one is available)
         // For example: < or <=
         char nextCharacter = source.charAt(current);
-
+        String text = null;
+        switch (nextCharacter) {
+            case '<':
+                boolean leq = examine('=');
+                text = leq ? "<=" : "<";
+                current += text.length();
+                return new Token(leq ? TokenType.LESS_EQUAL : TokenType.LESS_THAN, text, line);
+            case '>':
+                boolean geq = examine('=');
+                text = geq ? ">=" : ">";
+                current += text.length();
+                return new Token(geq ? TokenType.GREATER_EQUAL : TokenType.GREATER_THAN, text, line);
+            case '=':
+                if (examine('=')) {
+                    text = "==";
+                    current += text.length();
+                    return new Token(TokenType.EQUIVALENT, text, line);
+                }
+            case '!':
+                if (examine('=')) {
+                    text = "!=";
+                    current += text.length();
+                    return new Token(TokenType.NOT_EQUAL, text, line);
+                }
+        }
         return null;
     }
 
@@ -83,7 +122,12 @@ public class SpartieScanner {
     private Token getDivideOrComment() {
         // Hint: Examine the character for a comparison but check the next character (as long as one is available)
         char nextCharacter = source.charAt(current);
-
+        if (nextCharacter == '/') {
+            boolean isComment = examine('/');
+            String text = isComment ? "//" : "/";
+            current += text.length();
+            return new Token(isComment ? TokenType.IGNORE : TokenType.DIVIDE, text, line);
+        }
         return null;
     }
 
@@ -91,10 +135,27 @@ public class SpartieScanner {
     private Token getStringToken() {
         // Hint: Check if you have a double quote, then keep reading until you hit another double quote
         // But, if you do not hit another double quote, you should report an error
-        char nextCharacter = source.charAt(current);
 
         String string = null;
-
+        char nextCharacter = source.charAt(current);
+        if (nextCharacter == '\"') {
+            StringBuilder builder = new StringBuilder();
+            boolean found = false;
+            while (!isAtEnd(current + 1) && !examine('\n')) {
+                if (examine('\"')) {
+                    found = true;
+                    break;
+                } else {
+                    char next = source.charAt(++current);
+                    builder.append(next);
+                }
+            }
+            if (found) {
+                current += 2;
+                string = builder.toString();
+                return new Token(TokenType.STRING, string, line);
+            }
+        }
         return null;
     }
 
@@ -124,15 +185,15 @@ public class SpartieScanner {
     // This will check if a character is what you expect, if so, it will advance
     // Useful for checking <= or //
     private boolean examine(char expected) {
-        if (isAtEnd()) return false;
+        if (isAtEnd(current + 1)) return false;
         if (source.charAt(current + 1) != expected) return false;
 
         // Otherwise, it matches it, so advance
         return true;
     }
 
-    private boolean isAtEnd() {
-        return current >= source.length();
+    private boolean isAtEnd(int index) {
+        return index >= source.length();
     }
 
     // Error handling
